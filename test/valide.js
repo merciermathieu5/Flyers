@@ -293,9 +293,158 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 
   console.log('— Masse salariale (cohérence)');
   const actifs = S.SECOURS_ROSTER.filter(x2 => !x2.backup);
-  const masse = actifs.reduce((s2, x2) => s2 + x2.salaire, 0);
+  const comptabilises = actifs.filter(x2 => x2.ct > 0);
+  const masse = comptabilises.reduce((s2, x2) => s2 + x2.salaire, 0);
   egal(masse, 82860000, 'Masse salariale des 24 pros = 82 860 000 $ (vérifiée contre la moyenne de la page : 3 452 500 $ × 24)');
-  ok(doc.querySelector('#alignSommaire .stat-carte').classList.contains('alerte'), 'Dépassement du plafond de 81,5 M$ signalé en alerte');
+  ok(!doc.querySelector('#alignSommaire .stat-carte').classList.contains('alerte'), 'Sous le nouveau plafond de 104 M$ : aucune alerte');
+  ok(doc.querySelector('#alignSommaire .stat-carte .det').textContent.replace(/\s/g,'').includes('104000000'), 'Plafond affiché = 104 000 000 $');
+
+  console.log('— Charte salariale des re-signatures (Y22, cap 104 M)');
+  // Salaires minimums transcrits de la charte (en dollars)
+  egal(S.salaireMinimum(74, 'RFA', 25), 700000, 'RFA OV74- = 700 000 $');
+  egal(S.salaireMinimum(82, 'RFA', 25), 8750000, 'RFA OV82 = 8 750 000 $');
+  egal(S.salaireMinimum(90, 'RFA', 22), 17500000, 'RFA OV87+ = 17 500 000 $ (clamp haut)');
+  egal(S.salaireMinimum(80, 'UFA', 30), 5000000, 'UFA OV80 34- = 5 000 000 $');
+  egal(S.salaireMinimum(80, 'UFA', 36), 3250000, 'UFA OV80 35+ = 3 250 000 $ (tranche d\'âge)');
+  egal(S.salaireMinimum(83, 'UFAR2', 32), 7500000, 'UFA Ronde 2 OV83 34- = 7 500 000 $');
+  egal(S.salaireMinimum(85, 'SANS', 37), 6000000, 'Sans contrat OV85 35+ = 6 000 000 $');
+  egal(S.salaireMinimum(70, 'RFA', 25), 700000, 'OV sous 74 → clamp au plancher (700 000 $)');
+  // Statut déduit de l'âge (règle retenue : 28- = RFA, sinon UFA)
+  egal(S.statutResignature({age:28}), 'RFA', '28 ans → RFA');
+  egal(S.statutResignature({age:29}), 'UFA', '29 ans → UFA');
+  egal(S.statutResignature({age:22}), 'RFA', '22 ans → RFA');
+  // Durées maximales par statut (charte)
+  egal(S.dureeMaxCharte('RFA'), 7, 'RFA : durée max 7 ans');
+  egal(S.dureeMaxCharte('UFA'), 4, 'UFA : durée max 4 ans');
+  egal(S.dureeMaxCharte('UFAR2'), 2, 'UFA Ronde 2 : durée max 2 ans');
+  egal(S.dureeMaxCharte('SANS'), 1, 'Sans contrat : durée 1 an');
+  // Clé de charte avec tranche d'âge
+  egal(S.cleCharte('UFA', 34), 'UFA_34', 'UFA 34 ans → colonne 34-');
+  egal(S.cleCharte('UFA', 35), 'UFA_35', 'UFA 35 ans → colonne 35+');
+  // Règle RFA : 1 à 7 saisons à la discrétion du DG, +1 échelon par année après 3
+  egal(S.echelonEffectif(80, 'RFA', 3), 80, 'RFA 3 ans → échelon de base (OV 80)');
+  egal(S.echelonEffectif(80, 'RFA', 4), 81, 'RFA 4 ans → échelon +1 (OV 81)');
+  egal(S.echelonEffectif(80, 'RFA', 7), 84, 'RFA 7 ans → échelon +4 (OV 84)');
+  egal(S.echelonEffectif(80, 'UFA', 4), 80, 'La règle d\'échelon ne touche pas les UFA');
+  egal(S.salaireMinimum(80, 'RFA', 25, 1), 5750000, 'RFA OV80, 1 an = 5 750 000 $');
+  egal(S.salaireMinimum(80, 'RFA', 25, 3), 5750000, 'RFA OV80, 3 ans = même minimum (5 750 000 $)');
+  egal(S.salaireMinimum(80, 'RFA', 25, 4), 7500000, 'RFA OV80, 4 ans = échelon 81 (7 500 000 $)');
+  egal(S.salaireMinimum(80, 'RFA', 25, 7), 12250000, 'RFA OV80, 7 ans = échelon 84 (12 250 000 $)');
+  egal(S.salaireMinimum(86, 'RFA', 24, 7), 17500000, 'RFA OV86, 7 ans → échelon 90, clampé à 87+ (17 500 000 $)');
+  egal(S.salaireMinimum(80, 'UFA', 30, 4), 5000000, 'UFA OV80, 4 ans = minimum inchangé (5 000 000 $)');
+  // Règle des gardiens : un échelon plus bas à la prolongation
+  egal(S.echelonEffectif(83, 'UFA', 2, 'G'), 82, 'Gardien OV83 → échelon 82 (un échelon plus bas)');
+  egal(S.echelonEffectif(83, 'UFA', 2, 'C'), 83, 'Patineur OV83 → échelon inchangé');
+  egal(S.echelonEffectif(80, 'RFA', 5, 'G'), 81, 'Gardien RFA 5 ans : +2 (durée) −1 (gardien) = OV81');
+  egal(S.salaireMinimum(83, 'UFA', 32, 2, 'G'), 7500000, 'Gardien UFA OV83 34- → minimum de l\'échelon 82 (7 500 000 $)');
+  egal(S.salaireMinimum(83, 'UFA', 32, 2, 'C'), 8750000, 'Patineur UFA OV83 34- → minimum de son échelon (8 750 000 $)');
+  egal(S.salaireMinimum(74, 'UFA', 30, 1, 'G'), 900000, 'Gardien OV74 → clamp au plancher de la charte');
+  // Éligibilité : seuls les contrats échus (0 an) se prolongent
+  egal(S.peutProlonger({ct:0, backup:false}), true, 'Contrat échu (0 an) → prolongeable');
+  egal(S.peutProlonger({ct:1, backup:false}), false, 'Sous contrat (1 an) → NON prolongeable');
+  egal(S.peutProlonger({ct:0, backup:true}), false, 'Backup → jamais prolongeable');
+  // Format et parsing des montants
+  egal(S.parseArgent('8,5 M'), 8500000, 'parseArgent «8,5 M» = 8 500 000');
+  egal(S.parseArgent('900 k'), 900000, 'parseArgent «900 k» = 900 000');
+  egal(S.parseArgent('7500000'), 7500000, 'parseArgent «7500000» = 7 500 000');
+  egal(S.fmtArgentCourt(8500000), '8,5 M', 'fmtArgentCourt 8,5 M');
+  egal(S.fmtArgentCourt(900000), '900 k', 'fmtArgentCourt 900 k');
+
+  console.log('— Re-signature : interaction, persistance et impact sur la masse');
+  console.log('— Fenêtre «Prolongation de contrat» : éligibilité, ouverture, bornage, impact, retrait');
+  W.localStorage.removeItem('sjs_resignatures_v1');
+  doc.querySelector('[data-vue="alignement"]')?.click();
+  // Aucun joueur sous contrat n'offre de bouton : seuls les contrats échus (0 an) se prolongent
+  const jSous = S.ETAT.roster.find(x=>!x.backup && x.ct > 0);
+  ok(!!jSous, 'Au moins un joueur sous contrat dans le club');
+  ok(![...doc.querySelectorAll('button.btn-prolong[data-nom]')].find(b=>b.dataset.nom===jSous.nom),
+    'Joueur sous contrat : pas de bouton «Prolonger» (règle de la ligue)');
+  S.ouvrirProlongation(jSous.nom);
+  ok(!doc.getElementById('modalProlong') || doc.getElementById('modalProlong').hidden,
+    'ouvrirProlongation refuse un joueur sous contrat (défense en profondeur)');
+  // Muter un patineur à contrat échu pour tester la mécanique complète, puis restaurer
+  const jMut = S.ETAT.roster.find(x=>!x.backup && x.po!=='G');
+  const ctAvant = jMut.ct;
+  jMut.ct = 0;
+  doc.querySelector('#tableAlignement thead th[data-col="ov"]')?.click(); // re-rendu
+  const btnP = [...doc.querySelectorAll('button.btn-prolong[data-nom]')].find(b=>b.dataset.nom===jMut.nom);
+  ok(!!btnP, 'Contrat échu (0 an) : bouton «Prolonger» présent');
+  egal(btnP.textContent.trim(), 'Prolonger', 'Libellé initial du bouton');
+  const nomP = jMut.nom, cleP = S.normaliserNom(nomP);
+  const statutP = S.statutResignature(jMut);
+  btnP.click();                                   // ouvre la fenêtre
+  const modal = doc.getElementById('modalProlong');
+  ok(!!modal && !modal.hidden, 'La fenêtre de prolongation s\'ouvre au clic');
+  egal(doc.getElementById('mpNom').textContent, nomP, 'Nom du joueur affiché dans la fenêtre');
+  egal(doc.getElementById('mpStatut').value, statutP, 'Statut proposé = statut déduit de l\'âge');
+  const dureeInitP = statutP === 'RFA' ? 3 : S.dureeMaxCharte(statutP);
+  const minPD = S.salaireMinimum(jMut.ov, statutP, jMut.age, dureeInitP, jMut.po);
+  egal(+doc.getElementById('mpDuree').value, dureeInitP, 'Durée proposée : 3 ans pour un RFA (dernier palier sans hausse), durée max sinon');
+  egal(S.parseArgent(doc.getElementById('mpSalaire').value), minPD, 'Salaire pré-rempli au minimum de la charte pour cette durée');
+  egal(doc.getElementById('mpDuree').options.length, S.dureeMaxCharte(statutP),
+    'Durées offertes = 1 à la durée max du statut');
+  ok(doc.getElementById('mpImpact').textContent.includes('Masse projetée'), 'Aperçu d\'impact sur la masse affiché');
+  ok(doc.getElementById('mpRetirer').style.display === 'none', 'Bouton «Retirer» masqué pour un joueur non prolongé');
+  // un salaire sous le minimum est ramené au minimum à la confirmation
+  doc.getElementById('mpSalaire').value = '1';
+  doc.getElementById('mpOk').click();
+  ok(modal.hidden, 'La fenêtre se ferme après confirmation');
+  const rP = S.litResignatures();
+  ok(!!rP[cleP], 'Prolongation persistée');
+  egal(rP[cleP].salaire, minPD, 'Salaire sous le minimum ramené au minimum de la charte');
+  egal(rP[cleP].statut, statutP, 'Statut enregistré');
+  ok(rP[cleP].duree >= 1 && rP[cleP].duree <= S.dureeMaxCharte(statutP), 'Durée enregistrée dans les bornes de la charte');
+  ok(doc.querySelector('#alignSommaire .det').textContent.includes('prolongé'), 'Mention «prolongé» dans le sommaire de masse');
+  const btnP2 = [...doc.querySelectorAll('button.btn-prolong[data-nom]')].find(b=>b.dataset.nom===nomP);
+  ok(btnP2.classList.contains('actif') && btnP2.textContent.includes('Prolongé'), 'Bouton passe à l\'état «Prolongé»');
+  // la masse inclut le salaire de prolongation (le joueur ct=0 rentre au plafond)
+  const masseAvecP = S.calculerMasse(S.litResignatures()).masse;
+  const masseSansP = S.calculerMasse({}).masse;
+  egal(masseAvecP - masseSansP, minPD, 'Le prolongé (contrat échu) rentre au plafond avec son salaire de prolongation');
+  // hausse volontaire au-dessus du minimum
+  btnP2.click();
+  ok(doc.getElementById('mpRetirer').style.display !== 'none', 'Bouton «Retirer» visible pour un joueur prolongé');
+  egal(doc.getElementById('mpOk').textContent, 'Mettre à jour', 'Bouton de confirmation devient «Mettre à jour»');
+  const hausseP = minPD + 3000000;
+  doc.getElementById('mpSalaire').value = String(hausseP);
+  doc.getElementById('mpOk').click();
+  egal(S.litResignatures()[cleP].salaire, hausseP, 'Hausse volontaire au-dessus du minimum conservée');
+  // changement de statut : les durées se recalculent
+  const btnP3 = [...doc.querySelectorAll('button.btn-prolong[data-nom]')].find(b=>b.dataset.nom===nomP);
+  btnP3.click();
+  const selSt = doc.getElementById('mpStatut');
+  selSt.value = 'SANS';
+  selSt.dispatchEvent(new W.Event('change'));
+  egal(doc.getElementById('mpDuree').options.length, 1, 'Statut «Sans contrat» → une seule durée offerte (1 an)');
+  doc.getElementById('mpAnnuler').click();
+  ok(doc.getElementById('modalProlong').hidden, 'Annuler ferme la fenêtre');
+  egal(S.litResignatures()[cleP].salaire, hausseP, 'Annuler ne modifie pas la prolongation enregistrée');
+  // retrait
+  const btnP4 = [...doc.querySelectorAll('button.btn-prolong[data-nom]')].find(b=>b.dataset.nom===nomP);
+  btnP4.click();
+  doc.getElementById('mpRetirer').click();
+  ok(!S.litResignatures()[cleP], '«Retirer la prolongation» supprime l\'entrée');
+  jMut.ct = ctAvant;
+  // Gardien à contrat échu : le minimum descend d'un échelon
+  const gMut = S.ETAT.roster.find(x=>!x.backup && x.po==='G');
+  ok(!!gMut, 'Au moins un gardien dans le club');
+  const ctG = gMut.ct;
+  gMut.ct = 0;
+  doc.querySelector('#tableAlignement thead th[data-col="ov"]')?.click(); // re-rendu
+  const btnG = [...doc.querySelectorAll('button.btn-prolong[data-nom]')].find(b=>b.dataset.nom===gMut.nom);
+  ok(!!btnG, 'Gardien à contrat échu : bouton présent');
+  btnG.click();
+  const stG = doc.getElementById('mpStatut').value;
+  const dG = +doc.getElementById('mpDuree').value;
+  const minG = S.salaireMinimum(gMut.ov, stG, gMut.age, dG, 'G');
+  const minGPat = S.salaireMinimum(gMut.ov, stG, gMut.age, dG, 'C');
+  egal(S.parseArgent(doc.getElementById('mpSalaire').value), minG, 'Salaire du gardien pré-rempli à l\'échelon INFÉRIEUR (règle des gardiens)');
+  ok(minG < minGPat || gMut.ov - 1 < 74, 'Minimum gardien plus bas que celui d\'un patineur de même OV (sauf clamp au plancher)');
+  ok(doc.getElementById('mpMin').textContent.includes('gardien'), 'La note d\'échelon explique la règle du gardien');
+  doc.getElementById('mpAnnuler').click();
+  gMut.ct = ctG;
+  doc.querySelector('#tableAlignement thead th[data-col="ov"]')?.click(); // retour à l'état initial
+  W.localStorage.removeItem('sjs_resignatures_v1');
 
   console.log('— Divers');
   egal(S.matchsEquipe(), 82, 'Fiche PHILLY 49-30-3 → 82 matchs (saison Y21 complète, page du 21 avril)');
